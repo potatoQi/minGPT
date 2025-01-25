@@ -18,7 +18,6 @@ class CausalSelfAttention(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
-        assert cfg.n_embd % cfg.n_head == 0
 
 class Block(nn.Module):
     """ Transformer block """
