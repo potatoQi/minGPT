@@ -87,6 +87,14 @@ class CfgNode:
 
         --model.n_layer=10 --trainer.batch_size=32
         """
+        '''
+        args形如: args = [
+            '--model.n_layer=12',
+            '--model.n_head=8',
+            '--trainer.batch_size=64',
+            '--trainer.learning_rate=0.01'
+            ]
+        '''
         for arg in args:
 
             keyval = arg.split('=')

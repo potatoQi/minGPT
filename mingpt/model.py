@@ -51,9 +51,12 @@ class CausalSelfAttention(nn.Module):
 
     def forward(self, x):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        # T 表示 token 的数量, C 表示每个 token 的 embedding 维度
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         q, k ,v  = self.c_attn(x).split(self.n_embd, dim=2)
+        # ⬆️: (B, T, 3 * n_embd) -> (B, T, n_embd x 3) -> (B, T, n_embd) x 3
+
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
@@ -99,17 +102,17 @@ class GPT(nn.Module):
     def get_default_config():
         C = CN()
         # either model_type or (n_layer, n_head, n_embd) must be given in the config
-        C.model_type = 'gpt'
-        C.n_layer = None
-        C.n_head = None
-        C.n_embd =  None
+        C.model_type = 'gpt'    # 不同的 model 有不同的层数, 头数, embedding 维度
+        C.n_layer = None        # transformer 块的层数, n_ means number of
+        C.n_head = None         # 每个块里并行的注意力头数
+        C.n_embd =  None        # embedding 的维度
         # these options must be filled in externally
-        C.vocab_size = None
-        C.block_size = None
+        C.vocab_size = None     # 词表大小
+        C.block_size = None     # 输入序列的最大长度
         # dropout hyperparameters
-        C.embd_pdrop = 0.1
-        C.resid_pdrop = 0.1
-        C.attn_pdrop = 0.1
+        C.embd_pdrop = 0.1      # embedding 层的 dropout
+        C.resid_pdrop = 0.1     # 残差连接的 dropout
+        C.attn_pdrop = 0.1      # 注意力层的 dropout
         return C
 
     def __init__(self, config):
@@ -171,46 +174,46 @@ class GPT(nn.Module):
             torch.nn.init.zeros_(module.bias)
             torch.nn.init.ones_(module.weight)
 
-    @classmethod
-    def from_pretrained(cls, model_type):
-        """
-        Initialize a pretrained GPT model by copying over the weights
-        from a huggingface/transformers checkpoint.
-        """
-        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
-        from transformers import GPT2LMHeadModel
+    # @classmethod
+    # def from_pretrained(cls, model_type):
+    #     """
+    #     Initialize a pretrained GPT model by copying over the weights
+    #     from a huggingface/transformers checkpoint.
+    #     """
+    #     assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
+    #     from transformers import GPT2LMHeadModel
 
-        # create a from-scratch initialized minGPT model
-        config = cls.get_default_config()
-        config.model_type = model_type
-        config.vocab_size = 50257 # openai's model vocabulary
-        config.block_size = 1024  # openai's model block_size
-        model = GPT(config)
-        sd = model.state_dict()
+    #     # create a from-scratch initialized minGPT model
+    #     config = cls.get_default_config()
+    #     config.model_type = model_type
+    #     config.vocab_size = 50257 # openai's model vocabulary
+    #     config.block_size = 1024  # openai's model block_size
+    #     model = GPT(config)
+    #     sd = model.state_dict()
 
-        # init a huggingface/transformers model
-        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
-        sd_hf = model_hf.state_dict()
+    #     # init a huggingface/transformers model
+    #     model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+    #     sd_hf = model_hf.state_dict()
 
-        # copy while ensuring all of the parameters are aligned and match in names and shapes
-        keys = [k for k in sd_hf if not k.endswith('attn.masked_bias')] # ignore these
-        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
-        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla nn.Linear.
-        # this means that we have to transpose these weights when we import them
-        assert len(keys) == len(sd)
-        for k in keys:
-            if any(k.endswith(w) for w in transposed):
-                # special treatment for the Conv1D weights we need to transpose
-                assert sd_hf[k].shape[::-1] == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k].t())
-            else:
-                # vanilla copy over the other parameters
-                assert sd_hf[k].shape == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k])
+    #     # copy while ensuring all of the parameters are aligned and match in names and shapes
+    #     keys = [k for k in sd_hf if not k.endswith('attn.masked_bias')] # ignore these
+    #     transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+    #     # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla nn.Linear.
+    #     # this means that we have to transpose these weights when we import them
+    #     assert len(keys) == len(sd)
+    #     for k in keys:
+    #         if any(k.endswith(w) for w in transposed):
+    #             # special treatment for the Conv1D weights we need to transpose
+    #             assert sd_hf[k].shape[::-1] == sd[k].shape
+    #             with torch.no_grad():
+    #                 sd[k].copy_(sd_hf[k].t())
+    #         else:
+    #             # vanilla copy over the other parameters
+    #             assert sd_hf[k].shape == sd[k].shape
+    #             with torch.no_grad():
+    #                 sd[k].copy_(sd_hf[k])
 
-        return model
+    #     return model
 
     def configure_optimizers(self, train_config):
         """

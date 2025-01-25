@@ -2,7 +2,7 @@
 
 是我 [练习 pytorch ](https://github.com/potatoQi/pytorch_learning) 项目的一个子项目。 
 
-`minGPT` 为 karpathy 写的，`_my_minGPT` 是我写的。到时候测试我写的对不对的时候，可以把我的文件名改为 `minGPT` 即可。
+`minGPT` 为 karpathy 写的，`my_minGPT` 是我写的。到时候测试我写的对不对的时候，可以把我的文件名改为 `minGPT` 即可。
 
 ## Library Installation
 ```bash
