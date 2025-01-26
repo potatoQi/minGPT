@@ -2,7 +2,7 @@
 
 是我 [练习 pytorch ](https://github.com/potatoQi/pytorch_learning) 项目的一个子项目。 
 
-`minGPT` 为 karpathy 写的，`my_minGPT` 是我写的。到时候测试我写的对不对的时候，可以把我的文件名改为 `minGPT` 即可。
+`minGPT` 为 karpathy 写的，`my_minGPT` 是我写的。
 
 ## Library Installation
 ```bash
@@ -24,4 +24,5 @@ pip install -e .
 - projects/adder：从零开始训练一个 GPT 模型来进行加法运算，灵感来源于 GPT-3 论文中的加法部分。
 - projects/chargpt：训练一个 GPT 模型，成为一个基于字符的语言模型，输入文本文件进行训练。
 - demo.ipynb：展示了在笔记本格式下使用 GPT 模型和 Trainer 的最小示例，采用简单的排序任务。
+- my_demo.ipynb 同上, 只不过换成我自己写的库
 - generate.ipynb：展示如何加载一个预训练的 GPT2 模型，并根据给定的提示生成文本。

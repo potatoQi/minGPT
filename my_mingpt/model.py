@@ -1,5 +1,5 @@
 from torch import nn
-from utils import CfgNode
+from my_mingpt.utils import CfgNode
 import torch
 import math
 
@@ -18,6 +18,37 @@ class CausalSelfAttention(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
+        assert cfg.n_embd % cfg.n_head == 0, 'embedding 的维度必须是多头的整数倍'
+        self.qkv = nn.Linear(cfg.n_embd, 3 * cfg.n_embd)
+        self.proj = nn.Linear(cfg.n_embd, cfg.n_embd)
+        self.attn_dropout = nn.Dropout(cfg.atten_pdrop)
+        self.resid_dropout = nn.Dropout(cfg.resid_pdrop)
+        # 定义一个不被优化器优化的 buffer, 名字叫 mask, 这个 buffer 会被保存在 state_dict 中
+        # tril 是取下三角矩阵, view 是把它变成 4 维的, 为了和后面的 attention 矩阵相乘
+        self.register_buffer("mask", torch.tril(torch.ones(cfg.block_size, cfg.block_size)).view(1, 1, cfg.block_size, cfg.block_size))
+        self.softmax = nn.Softmax()
+        self.n_head = cfg.n_head
+        self.n_embd = cfg.n_embd
+
+    def forward(self, x):
+        # B 表示 batch, T 表示 token 的数量, C 表示每个 token 的维度
+        B, T, C = x.shape
+        # (B, T, 3 * C) -> (B, T, C) * 3
+        q, k, v = self.qkv(x).split(dim=-1, split_size=C)
+
+        # (B, T, C) -> (B, T, n_head, C // n_head) -> (B, n_head, T, C // n_head)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+
+        # att: (B, n_head, T, T)
+        att = (q @ k.transpose(-2, -1)) / math.sqrt(C // self.n_head)
+        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
+        att = nn.Softmax(dim=-1)(att)
+        att = self.attn_dropout(att)
+        y = att @ v # (B, n_head, T, C // n_head) x (B, n_head, T, C // n_head) -> (B, n_head, T, C // n_head)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # (B, T, n_head, C // n_head) -> (B, T, C)
+        return self.resid_dropout(self.proj(y))
 
 class Block(nn.Module):
     """ Transformer block """
@@ -61,9 +92,10 @@ class minGPT(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
+        self.cfg = cfg
         self.wte = nn.Embedding(cfg.vocab_size, cfg.n_embd)  # wte: word token embedding
         self.wpe = nn.Embedding(cfg.block_size, cfg.n_embd)  # wpe: word position embedding
-        self.embd_pdrop = nn.Dropout(cfg.embd_pdrop)
+        self.embd_drop = nn.Dropout(cfg.embd_pdrop)
         self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])   # 这里直接搞 n_layer 层是因为为了初始化参数方便一起弄了
         self.ln = nn.LayerNorm(cfg.n_embd)
         self.lm_head = nn.Linear(cfg.n_embd, cfg.vocab_size, bias=False)    # 就是最后把 token 映射到词表的那一个矩阵
@@ -86,12 +118,22 @@ class minGPT(nn.Module):
             torch.nn.init.zeros_(module.bias)
             torch.nn.init.ones_(module.weight)
 
+    def forward(self, x, y):
+        B, T = x.shape # batch, token 数量
+        assert T <= self.cfg.block_size, 'token 数量超过了 block_size'
+        pos = torch.arange(0, T, dtype=torch.long, device=x.device).unsqueeze(0) # (1, T)
 
-# --------------------- 以下是测试代码 ---------------------
-cfg = minGPT.get_default_config()
-cfg.n_layer = 3
-cfg.n_head = 4
-cfg.n_embd = 128
-cfg.vocab_size = 1000
-cfg.block_size = 128
-model = minGPT(cfg)
+        tok_emb = self.wte(x) # (B, T, C)
+        pos_emb = self.wpe(pos) # (1, T, C)
+        x = self.embd_drop(tok_emb + pos_emb) # (B, T, C)
+        # 广播的规则是，如果某个维度上的大小不一致，且其中一个维度为 1，那么它会被自动扩展以匹配另一个维度
+        for block in self.blocks:
+            x = block(x)
+        x = self.ln(x)
+        logits = self.lm_head(x)    # (B, T, vocab_size)
+
+        loss = None
+        if y is not None:
+            loss = nn.CrossEntropyLoss(ignore_index=-1)(logits.view(-1, logits.shape[-1]), y.view(-1))
+
+        return logits, loss
