@@ -293,21 +293,25 @@ class GPT(nn.Module):
             # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.size(1) <= self.block_size else idx[:, -self.block_size:]
             # forward the model to get the logits for the index in the sequence
-            logits, _ = self(idx_cond)
+            logits, _ = self(idx_cond)  # logits: (B, T, vocab_size)
             # pluck the logits at the final step and scale by desired temperature
-            logits = logits[:, -1, :] / temperature
+            logits = logits[:, -1, :] / temperature # 只保留最后一个 token 的 logits, 此时 logits: (B, vocab_size)
+            # 当 temperature < 1 时, logits 被放大, 即相对距离变得更加明显, 从而 softmax 后模型输出更固定
+            # 当 temperauter > 1 时, logits 被缩小, 即相对距离变得更加接近, 从而 softmax 后模型输出更随机
             # optionally crop the logits to only the top k options
             if top_k is not None:
-                v, _ = torch.topk(logits, top_k)
+                v, _ = torch.topk(logits, top_k)    # torch.topk 返回 topk 的值和索引, 即 (B, top_k), (B, top_k)
                 logits[logits < v[:, [-1]]] = -float('Inf')
+                # ⬆️: v[:, [-1]] 跟 v[:, -1] 不同，后者是 (B,)，前者是 (B, 1)
+                # logits 是 (B, vocab_size), v 是 (B, 1), 所以广播机制会复制 v, 从而实现逐元素的比较
             # apply softmax to convert logits to (normalized) probabilities
             probs = F.softmax(logits, dim=-1)
             # either sample from the distribution or take the most likely element
             if do_sample:
                 idx_next = torch.multinomial(probs, num_samples=1)
             else:
-                _, idx_next = torch.topk(probs, k=1, dim=-1)
+                _, idx_next = torch.topk(probs, k=1, dim=-1) # idx_next: (B, 1)
             # append sampled index to the running sequence and continue
-            idx = torch.cat((idx, idx_next), dim=1)
+            idx = torch.cat((idx, idx_next), dim=1) # idx: (B, T+1)
 
         return idx

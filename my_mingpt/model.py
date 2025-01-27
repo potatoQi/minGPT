@@ -118,7 +118,7 @@ class minGPT(nn.Module):
             torch.nn.init.zeros_(module.bias)
             torch.nn.init.ones_(module.weight)
 
-    def forward(self, x, y):
+    def forward(self, x, y=None):
         B, T = x.shape # batch, token 数量
         assert T <= self.cfg.block_size, 'token 数量超过了 block_size'
         pos = torch.arange(0, T, dtype=torch.long, device=x.device).unsqueeze(0) # (1, T)
@@ -134,6 +134,24 @@ class minGPT(nn.Module):
 
         loss = None
         if y is not None:
+            # 将 logits 展为 (BxT, vocab_size), y 展为 (BxT,)
             loss = nn.CrossEntropyLoss(ignore_index=-1)(logits.view(-1, logits.shape[-1]), y.view(-1))
 
         return logits, loss
+
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None):
+        for _ in range(max_new_tokens):
+            idx_cond = idx if idx.shape[1] <= self.cfg.block_size else idx[:, -self.cfg.block_size:]
+            logits, _ = self(idx_cond) # logits: (B, T, vocab_size)
+            logits = logits[:, -1, :] / temperature # 只保留最后一个 token 的 logits
+            if top_k is not None:
+                v, _ = torch.topk(logits, top_k, dim=-1)
+                logits[logits < v[:, [-1]]] = -float('Inf') # logits: (B, vocab_size)
+            probs = nn.Softmax(dim=-1)(logits)
+            if do_sample:
+                idx_nxt = torch.multinomial(probs, num_samples=1)
+            else:
+                _, idx_nxt = torch.topk(probs, k=1, dim=-1) # idx_nxt: (B, 1)
+            idx = torch.cat((idx, idx_nxt), dim=1)
+        return idx

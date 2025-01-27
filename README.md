@@ -38,8 +38,12 @@
   - class CausalSelfAttention
   - class NEWGELU
   - class forward
+  - class generate
 - 实现 `train.py`, 包括:
   - def get_default_config
   - def \_\_init\_\_
-  - def run
+  - def run_train
   - def train_loop
+  - def run_eval
+  - def eval_loop
+- 继续完成 demo.ipynb 的评估和推理
